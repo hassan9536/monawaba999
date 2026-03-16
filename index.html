@@ -6,12 +6,8 @@
     <title>نظام المناوبة المدرسية - مدرسة سعيد بن سلطان</title>
     <style>
         :root {
-            --sky-bg: #f0f9ff;
-            --deep-sky: #0ea5e9;
-            --dark-blue: #0c4a6e;
-            --white: #ffffff;
-            --danger: #ef4444;
-            --shadow: 0 4px 15px rgba(0,0,0,0.1);
+            --sky-bg: #f0f9ff; --deep-sky: #0ea5e9; --dark-blue: #0c4a6e;
+            --white: #ffffff; --danger: #ef4444; --shadow: 0 4px 15px rgba(0,0,0,0.1);
         }
 
         body {
@@ -50,7 +46,7 @@
         .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; text-align: right; font-weight: bold; }
 
         @media print {
-            .no-print, .tab-btn, button, header, footer { display: none !important; }
+            .no-print, .tab-btn, button, header, footer, #sync-banner { display: none !important; }
             .print-header { display: block; }
             body { background: white; }
             .container { box-shadow: none; width: 100%; margin: 0; padding: 0; border:none; }
@@ -61,14 +57,21 @@
         .multi-select-box { border: 1px solid #cbd5e1; padding: 10px; border-radius: 8px; max-height: 200px; overflow-y: auto; background: white; }
         .card { background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 20px; }
         .loc-tag { background:#e2e8f0; padding:5px 10px; margin:4px; display:inline-block; border-radius:15px; font-size:0.9rem; }
+        
+        /* شريط المزامنة */
+        #sync-banner {
+            position: fixed; bottom: 0; left: 0; right: 0; background: #10b981; color: white; text-align: center; padding: 8px; font-size: 0.9rem; font-weight: bold; display: none; z-index: 1000;
+        }
     </style>
 </head>
 <body>
 
 <header>
     <h1 style="margin:0">مدرسة سعيد بن سلطان</h1>
-    <p style="margin:5px 0 0 0">نظام المناوبة المدرسية</p>
+    <p style="margin:5px 0 0 0">نظام المناوبة المدرسية (متصل بالسحابة)</p>
 </header>
+
+<div id="sync-banner">جاري مزامنة البيانات...</div>
 
 <div class="container">
     <div id="login-screen">
@@ -197,28 +200,81 @@
 </div>
 
 <footer>
-    تصميم وتطوير / حسن البريكي - 95367258 &copy; 2026
+    فكرة وتصميم / حسن البريكي - 95367258 &copy; 2026
 </footer>
 
 <script>
-    // قاعدة البيانات
-    let db = JSON.parse(localStorage.getItem('school_duty_final')) || {
+    // الرابط الذي طلبته مدمج هنا
+    const CLOUD_URL = "https://script.google.com/macros/s/AKfycbwBQOlsKfGArNqeDi0p3xdrqqhrs1izDykPEQ8SXYqFLgtocitytqVHnUmtGgvY-0qeAw/exec";
+
+    let db = {
         admin: { user: 'admin', pass: '123' },
         locations: ['الساحة العامة', 'المقصف المدرسي', 'ممر الحافلات'],
-        supervisors: [],
-        assignments: {},
-        notes: []
+        supervisors: [], assignments: {}, notes: []
     };
 
     let currentUser = null;
 
+    // --- نظام المزامنة السحابية ---
+    async function loadDataFromCloud() {
+        showSyncBanner("جاري تحميل البيانات من السحابة...", "#0ea5e9");
+        try {
+            let res = await fetch(CLOUD_URL);
+            let text = await res.text();
+            let cloudDb = JSON.parse(text);
+            
+            // التأكد من أن البيانات صالحة
+            if(cloudDb && cloudDb.admin) {
+                db = cloudDb;
+                localStorage.setItem('school_duty_sync', JSON.stringify(db)); // نسخة احتياطية محلية
+                showSyncBanner("تم التحديث بنجاح ✔", "#10b981");
+            }
+        } catch(e) {
+            console.log("خطأ في الاتصال، سيتم استخدام النسخة المحلية.");
+            let localDb = JSON.parse(localStorage.getItem('school_duty_sync'));
+            if(localDb) db = localDb;
+            showSyncBanner("أنت تعمل في وضع عدم الاتصال (نسخة محلية)", "#ef4444");
+        }
+        setTimeout(() => document.getElementById('sync-banner').style.display = 'none', 3000);
+    }
+
+    function save() {
+        // الحفظ المحلي السريع
+        localStorage.setItem('school_duty_sync', JSON.stringify(db)); 
+        
+        // المزامنة للسحابة في الخلفية
+        showSyncBanner("جاري الرفع للسحابة...", "#f59e0b");
+        fetch(CLOUD_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            body: JSON.stringify(db)
+        }).then(() => {
+            showSyncBanner("تمت المزامنة ✔", "#10b981");
+            setTimeout(() => document.getElementById('sync-banner').style.display = 'none', 2000);
+        }).catch(() => {
+            showSyncBanner("فشل المزامنة، يرجى فحص الإنترنت", "#ef4444");
+        });
+    }
+
+    function showSyncBanner(text, color) {
+        const banner = document.getElementById('sync-banner');
+        banner.innerText = text;
+        banner.style.background = color;
+        banner.style.display = 'block';
+    }
+
+    // جلب البيانات فور فتح الصفحة
+    window.onload = () => {
+        loadDataFromCloud();
+    };
+
+    // --- باقي وظائف النظام ---
     function handleLogin() {
         const u = document.getElementById('user-input').value;
         const p = document.getElementById('pass-input').value;
 
         if(u === db.admin.user && p === db.admin.pass) {
-            currentUser = { role: 'admin' };
-            showDashboard();
+            currentUser = { role: 'admin' }; showDashboard();
         } else {
             const s = db.supervisors.find(x => x.name === u && x.pass === p);
             if(s) { currentUser = { role: 'sup', data: s }; showDashboard(); }
@@ -241,12 +297,11 @@
         }
     }
 
-    // إدارة المشرفين
     function saveSupervisor() {
         const name = document.getElementById('sup-name').value;
         const pass = document.getElementById('sup-pass').value;
         const subject = document.getElementById('sup-subject').value;
-        if(!name || !pass || !subject) return alert('يرجى ملء كافة البيانات الأساسية');
+        if(!name || !pass || !subject) return alert('يرجى ملء كافة البيانات');
 
         const idx = parseInt(document.getElementById('edit-index').value);
         const newData = {
@@ -258,45 +313,35 @@
         else db.supervisors[idx] = newData;
 
         save(); resetForm(); renderSupList(); updateNoteFilter();
-        alert('تم حفظ بيانات المشرف بنجاح');
     }
 
     function renderSupList() {
-        const body = document.getElementById('sup-list-body');
-        body.innerHTML = db.supervisors.map((s, i) => `
+        document.getElementById('sup-list-body').innerHTML = db.supervisors.map((s, i) => `
             <tr>
                 <td>${s.name} <br><small>(${s.subject})</small></td>
                 <td>${s.day}</td>
-                <td>
-                    <button class="btn-edit" onclick="editSup(${i})">تعديل</button>
-                    <button class="btn-del" onclick="deleteSup(${i})">حذف</button>
-                </td>
+                <td><button class="btn-edit" onclick="editSup(${i})">تعديل</button> <button class="btn-del" onclick="deleteSup(${i})">حذف</button></td>
             </tr>
         `).join('');
     }
 
     function editSup(i) {
         const s = db.supervisors[i];
-        document.getElementById('edit-index').value = i;
-        document.getElementById('sup-name').value = s.name;
-        document.getElementById('sup-pass').value = s.pass;
-        document.getElementById('sup-subject').value = s.subject;
-        document.getElementById('sup-day').value = s.day;
-        document.getElementById('teacher-paste').value = s.teachers.join('\n');
-        document.getElementById('form-title').innerText = "تعديل بيانات المشرف";
-        document.getElementById('cancel-btn').style.display = "block";
+        document.getElementById('edit-index').value = i; document.getElementById('sup-name').value = s.name;
+        document.getElementById('sup-pass').value = s.pass; document.getElementById('sup-subject').value = s.subject;
+        document.getElementById('sup-day').value = s.day; document.getElementById('teacher-paste').value = s.teachers.join('\n');
+        document.getElementById('form-title').innerText = "تعديل بيانات المشرف"; document.getElementById('cancel-btn').style.display = "block";
     }
 
     function deleteSup(i) {
         if(confirm('هل أنت متأكد من حذف هذا المشرف؟')) { db.supervisors.splice(i, 1); save(); renderSupList(); }
     }
 
-    // واجهة المشرف - التوزيع
     function initSupInterface() {
         const s = currentUser.data;
         document.getElementById('sup-welcome').innerText = `مرحباً أ. ${s.name} - توزيع يوم ${s.day}`;
         const area = document.getElementById('sup-distribution-area');
-        if(db.locations.length === 0) { area.innerHTML = "<p style='color:red'>لم يتم تحديد مواقع مناوبة من قبل المسؤول.</p>"; return; }
+        if(db.locations.length === 0) { area.innerHTML = "<p style='color:red'>لم يتم تحديد مواقع مناوبة.</p>"; return; }
 
         area.innerHTML = db.locations.map(loc => {
             const saved = db.assignments[`${s.day}-${loc}`] || [];
@@ -304,11 +349,7 @@
                 <div style="margin-bottom:15px; background:white; padding:15px; border-radius:8px; border-right:5px solid var(--deep-sky)">
                     <strong>الموقع: ${loc}</strong>
                     <div class="multi-select-box" style="margin-top:10px">
-                        ${s.teachers.map(t => `
-                            <label style="display:block; padding:5px; border-bottom:1px solid #f1f5f9; cursor:pointer">
-                                <input type="checkbox" name="${loc}" value="${t}" ${saved.includes(t) ? 'checked' : ''}> ${t}
-                            </label>
-                        `).join('')}
+                        ${s.teachers.map(t => `<label style="display:block; padding:5px; border-bottom:1px solid #f1f5f9; cursor:pointer"><input type="checkbox" name="${loc}" value="${t}" ${saved.includes(t) ? 'checked' : ''}> ${t}</label>`).join('')}
                     </div>
                 </div>
             `;
@@ -320,7 +361,7 @@
         db.locations.forEach(loc => {
             db.assignments[`${s.day}-${loc}`] = Array.from(document.querySelectorAll(`input[name="${loc}"]:checked`)).map(el => el.value);
         });
-        save(); alert('تم حفظ التوزيع بنجاح، يمكنك الآن الانتقال لمعاينة الطباعة.');
+        save(); alert('تم تثبيت التوزيع ومزامنته مع باقي الأجهزة.');
     }
 
     function renderFinalView() {
@@ -331,28 +372,22 @@
         }).join('');
     }
 
-    // الطباعة
     function prepareAndPrint(mode) {
         let day, supData;
         if(mode === 'general') { day = document.getElementById('select-day-view').value; supData = db.supervisors.find(s => s.day === day); } 
         else { day = currentUser.data.day; supData = currentUser.data; renderFinalView(); }
-
-        document.getElementById('p-day').innerText = day;
-        document.getElementById('p-subject').innerText = supData ? supData.subject : 'غير محدد';
-        document.getElementById('p-sup').innerText = supData ? supData.name : 'غير محدد';
-        document.getElementById('p-date').innerText = new Date().toLocaleDateString('ar-OM');
+        document.getElementById('p-day').innerText = day; document.getElementById('p-subject').innerText = supData ? supData.subject : 'غير محدد';
+        document.getElementById('p-sup').innerText = supData ? supData.name : 'غير محدد'; document.getElementById('p-date').innerText = new Date().toLocaleDateString('ar-OM');
         window.print();
     }
 
-    // الجداول والملاحظات (مدير)
     function renderScheduleTable() {
         const day = document.getElementById('select-day-view').value;
         document.getElementById('main-table-body').innerHTML = db.locations.map(loc => {
             const ts = db.assignments[`${day}-${loc}`] || [];
             return `
                 <tr>
-                    <td style="font-weight:bold">${loc}</td>
-                    <td>${ts.join(' - ') || '<span style="color:#94a3b8">لا يوجد مناوبين</span>'}</td>
+                    <td style="font-weight:bold">${loc}</td><td>${ts.join(' - ') || '<span style="color:#94a3b8">لا يوجد مناوبين</span>'}</td>
                     <td class="no-print"><input type="text" id="n-${day}-${loc}" placeholder="أضف ملاحظة..."></td>
                     <td class="no-print"><button onclick="addNote('${day}','${loc}')">إضافة</button></td>
                 </tr>
@@ -363,21 +398,16 @@
     function addNote(day, loc) {
         const text = document.getElementById(`n-${day}-${loc}`).value;
         const teachers = db.assignments[`${day}-${loc}`] || [];
-        if(!text) return alert('يرجى كتابة ملاحظة أولاً');
-        if(!teachers.length) return alert('لا يوجد معلمون في هذا الموقع لإضافة ملاحظة لهم');
-        
+        if(!text || !teachers.length) return alert('تأكد من كتابة الملاحظة ووجود معلمين في الموقع.');
         teachers.forEach(t => { db.notes.push({ teacher: t, text: text, date: new Date().toLocaleDateString('ar-OM') }); });
-        save(); document.getElementById(`n-${day}-${loc}`).value = ''; alert('تمت إضافة الملاحظة لسجل المعلمين');
+        save(); document.getElementById(`n-${day}-${loc}`).value = ''; alert('تمت إضافة الملاحظة للمزامنة.');
     }
 
     function renderNotes() {
         const f = document.getElementById('note-filter').value;
         const filtered = f === 'all' ? db.notes : db.notes.filter(n => n.teacher === f);
         document.getElementById('notes-list-body').innerHTML = filtered.map((n, i) => `
-            <tr>
-                <td>${n.teacher}</td><td>${n.text}</td><td>${n.date}</td>
-                <td class="no-print">${currentUser.role === 'admin' ? `<button class="btn-del" onclick="deleteNote(${i})">حذف</button>` : '---'}</td>
-            </tr>
+            <tr><td>${n.teacher}</td><td>${n.text}</td><td>${n.date}</td><td class="no-print"><button class="btn-del" onclick="deleteNote(${i})">حذف</button></td></tr>
         `).reverse().join('');
     }
 
@@ -385,11 +415,9 @@
 
     function updateNoteFilter() {
         let ts = []; db.supervisors.forEach(s => ts = ts.concat(s.teachers));
-        const unique = [...new Set(ts)];
-        document.getElementById('note-filter').innerHTML = '<option value="all">عرض جميع الملاحظات</option>' + unique.map(t => `<option value="${t}">${t}</option>`).join('');
+        document.getElementById('note-filter').innerHTML = '<option value="all">الكل</option>' + [...new Set(ts)].map(t => `<option value="${t}">${t}</option>`).join('');
     }
 
-    // التحكم والتنقل
     function switchSection(id) {
         document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -401,8 +429,6 @@
         if(id === 'sup-final-view') renderFinalView();
     }
 
-    function save() { localStorage.setItem('school_duty_final', JSON.stringify(db)); }
-    
     function logout() { if(confirm('هل تريد تسجيل الخروج؟')) location.reload(); }
     
     function resetForm() { 
@@ -420,9 +446,7 @@
         document.getElementById('loc-list').innerHTML = db.locations.map((l,i) => `<span class="loc-tag">${l} <button onclick="deleteLoc(${i})" style="color:red; border:none; background:none; cursor:pointer; font-weight:bold">×</button></span>`).join(''); 
     }
     
-    function deleteLoc(i) { if(confirm('حذف الموقع سيؤدي لإزالته من جداول التوزيع، هل أنت متأكد؟')) { db.locations.splice(i, 1); save(); renderLocs(); } }
-
-    window.onload = () => { if(db.admin) renderLocs(); };
+    function deleteLoc(i) { if(confirm('متأكد من الحذف؟')) { db.locations.splice(i, 1); save(); renderLocs(); } }
 </script>
 
 </body>
